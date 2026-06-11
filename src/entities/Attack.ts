@@ -21,11 +21,10 @@ export default class Attack extends Entity {
     scene: Phaser.Scene,
     x: number,
     y: number,
-    targetX: number,
-    targetY: number,
+    textureKey: string = 'attack',
     operation: AttackOperation = { type: 'add', value: 1 },
   ) {
-    super(scene, x, y, 'attack');
+    super(scene, x, y, textureKey);
 
     this.operation = operation;
 
@@ -36,9 +35,11 @@ export default class Attack extends Entity {
 
     body.setAllowGravity(false);
     body.setEnable(true);
+  }
 
-    const dx = targetX - x;
-    const dy = targetY - y;
+  fireTowards(targetX: number, targetY: number): void {
+    const dx = targetX - this.x;
+    const dy = targetY - this.y;
     const len = Math.sqrt(dx * dx + dy * dy);
 
     if (len === 0) {
@@ -46,7 +47,7 @@ export default class Attack extends Entity {
       return;
     }
 
-    body.setVelocity(
+    this.setVelocity(
       (dx / len) * ATTACK_SPEED,
       (dy / len) * ATTACK_SPEED
     );

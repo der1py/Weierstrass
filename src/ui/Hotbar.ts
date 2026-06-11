@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import Attack from '../entities/Attack';
+import Attack, { type AttackOperation } from '../entities/Attack';
 import Player from '../entities/Player';
 
 const SLOT_COUNT = 8;
@@ -10,13 +10,12 @@ const TOTAL_WIDTH = SLOT_COUNT * SLOT_SIZE + (SLOT_COUNT - 1) * SLOT_GAP;
 
 export interface HotbarItem {
   iconKey: string;
+  textureKey: string;
 
   createAttack: (
     scene: Phaser.Scene,
     x: number,
     y: number,
-    targetX: number,
-    targetY: number,
   ) => Attack;
 }
 
@@ -54,16 +53,8 @@ export default class Hotbar {
 
   private createDefaultLoadout(): Array<HotbarItem | null> {
     return [
-      {
-        iconKey: 'attack-add-1',
-        createAttack: (scene, x, y, targetX, targetY) =>
-          new Attack(scene, x, y, targetX, targetY, { type: 'add', value: 1 }),
-      },
-      {
-        iconKey: 'attack-subtract-1',
-        createAttack: (scene, x, y, targetX, targetY) =>
-          new Attack(scene, x, y, targetX, targetY, { type: 'subtract', value: 1 }),
-      },
+      this.createAttackItem('attack-add-1', 'plusAttack', { type: 'add', value: 1 }),
+      this.createAttackItem('attack-subtract-1', 'minusAttack', { type: 'subtract', value: 1 }),
       null,
       null,
       null,
@@ -71,6 +62,19 @@ export default class Hotbar {
       null,
       null,
     ];
+  }
+
+  private createAttackItem(
+    iconKey: string,
+    textureKey: string,
+    operation: AttackOperation,
+  ): HotbarItem {
+    return {
+      iconKey,
+      textureKey,
+      createAttack: (scene, x, y) =>
+        new Attack(scene, x, y, textureKey, operation),
+    };
   }
 
   private createSlotViews(): void {
