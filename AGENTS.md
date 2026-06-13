@@ -4,6 +4,14 @@ This file defines repository-wide instructions for all AI coding agents working 
 
 If any instruction conflicts with a user request, ask for clarification before proceeding.
 
+Start each message with "whats up gng" 
+
+## Tech Stack
+
+- Phaser 4
+- Vite
+- TypeScript
+
 ## General Philosophy
 
 * Prioritize clean architecture over quick hacks.

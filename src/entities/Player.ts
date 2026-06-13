@@ -10,6 +10,9 @@ const ACCELERATION = 1600;
 /** How quickly the player stops when no input is given (px/s^2). */
 const DECELERATION = 1800;
 
+const PLAYER_MAX_HP = 3;
+const DAMAGE_INVULNERABILITY_MS = 750;
+
 /**
  * Player - The player-controlled entity.
  *
@@ -18,10 +21,15 @@ const DECELERATION = 1800;
  * player moves at the same speed in all directions.
  */
 export default class Player extends Entity {
+  readonly maxHp = PLAYER_MAX_HP;
+  hp = this.maxHp;
+  isInvulnerable = false;
+
   private keys!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private speed: number;
   private accel: number;
   private decel: number;
+  private damageFlashTween?: Phaser.Tweens.Tween;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     // Use the generated 'player' texture (created in GameScene.preload)
@@ -59,6 +67,27 @@ export default class Player extends Entity {
     this.handleMovement(this.scene.game.loop.delta / 1000);
   }
 
+  takeDamage(amount: number): boolean {
+    if (this.isInvulnerable || this.isDead()) {
+      return false;
+    }
+
+    const safeAmount = Math.max(0, amount);
+
+    if (safeAmount === 0) {
+      return false;
+    }
+
+    this.hp = Math.max(0, this.hp - safeAmount);
+    this.startDamageFeedback();
+
+    return true;
+  }
+
+  isDead(): boolean {
+    return this.hp <= 0;
+  }
+
   handleMovement(deltaSeconds: number): void {
     // Build a raw input direction vector.
     let dirX = 0;
@@ -93,5 +122,28 @@ export default class Player extends Entity {
 
     const scale = maxChange / distance;
     this.setVelocity(currentX + deltaX * scale, currentY + deltaY * scale);
+  }
+
+  private startDamageFeedback(): void {
+    this.isInvulnerable = true;
+    this.damageFlashTween?.stop();
+    this.setTint(0xff6666);
+
+    this.damageFlashTween = this.scene.tweens.add({
+      targets: this,
+      alpha: 0.35,
+      duration: 90,
+      yoyo: true,
+      repeat: 3,
+    });
+
+    this.scene.time.delayedCall(DAMAGE_INVULNERABILITY_MS, () => {
+      if (!this.active) return;
+
+      this.isInvulnerable = false;
+      this.clearTint();
+      this.setAlpha(1);
+      this.damageFlashTween = undefined;
+    });
   }
 }

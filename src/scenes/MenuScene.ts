@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { SlideshowSceneData } from './SlideshowScene';
 
 /**
  * MenuScene — Title screen with a Start button.
@@ -36,7 +37,12 @@ export default class MenuScene extends Phaser.Scene {
 
     // Transition to the game
     startBtn.on('pointerdown', () => {
-      this.scene.start('GameScene');
+      const slideshowData: SlideshowSceneData = {
+        slides: ['karl', 'slide_1', 'slide_2'],
+        nextScene: 'GameScene',
+      };
+
+      this.scene.start('SlideshowScene', slideshowData);
     });
   }
 }

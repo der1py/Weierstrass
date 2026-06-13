@@ -1,7 +1,10 @@
 import Phaser from 'phaser';
 import './style.css';
+import PreloadScene from './scenes/PreloadScene';
 import MenuScene from './scenes/MenuScene';
+import SlideshowScene from './scenes/SlideshowScene';
 import GameScene from './scenes/GameScene';
+import GameOverScene from './scenes/GameOverScene';
 
 /**
  * Phaser game configuration.
@@ -20,7 +23,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [MenuScene, GameScene],
+  scene: [PreloadScene, MenuScene, SlideshowScene, GameScene, GameOverScene],
 };
 
 // Boot the game
