@@ -38,7 +38,7 @@ export default class MenuScene extends Phaser.Scene {
     // Transition to the game
     startBtn.on('pointerdown', () => {
       const slideshowData: SlideshowSceneData = {
-        slides: ['karl', 'slide_1', 'slide_2'],
+        slides: ['slide_1', 'slide_2', 'slide_3'],
         nextScene: 'GameScene',
       };
 

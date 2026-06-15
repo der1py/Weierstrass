@@ -2,6 +2,14 @@ import Phaser from 'phaser';
 import Entity from './Entity';
 import { type AttackOperation } from './Attack';
 import type Player from './Player';
+import {
+  addToExpression,
+  differentiate,
+  evaluateExpression,
+  isConstantExpressionValue,
+  parseExpression,
+  type ParsedExpression,
+} from '../math/Expression';
 
 const ENEMY_TEXTURE_KEY = 'enemy-collision-placeholder';
 const ENEMY_BODY_SIZE = 32;
@@ -21,21 +29,22 @@ function ensureEnemyTexture(scene: Phaser.Scene): string {
 }
 
 /**
- * Number enemy that moves toward the player and changes value when attacked.
+ * Function enemy that moves toward the player and changes expression when attacked.
  */
 export default class Enemy extends Entity {
   readonly kind = 'number';
+  expr: string;
 
   private readonly player: Player;
   private readonly speed: number;
   private readonly valueText: Phaser.GameObjects.Text;
-  private numericValue: number;
+  private expression: ParsedExpression;
 
   constructor(
     scene: Phaser.Scene,
     x: number,
     y: number,
-    value: number,
+    value: number | string,
     player: Player,
     speed: number = ENEMY_SPEED,
   ) {
@@ -43,7 +52,8 @@ export default class Enemy extends Entity {
 
     this.player = player;
     this.speed = speed;
-    this.numericValue = value;
+    this.expression = parseExpression(value);
+    this.expr = this.expression.expr;
 
     this.setOrigin(0.5);
     this.setDisplaySize(ENEMY_BODY_SIZE, ENEMY_BODY_SIZE);
@@ -56,7 +66,7 @@ export default class Enemy extends Entity {
     body.setSize(ENEMY_BODY_SIZE, ENEMY_BODY_SIZE, true);
 
     this.valueText = scene.add.text(this.x, this.y, this.getDisplayValue(), {
-      color: '#ffffff',
+      color: '#000000',
       fontSize: '24px',
       stroke: '#ff0000',
       strokeThickness: 4,
@@ -65,7 +75,11 @@ export default class Enemy extends Entity {
   }
 
   get value(): number {
-    return this.numericValue;
+    return this.evaluate(0);
+  }
+
+  evaluate(x: number): number {
+    return evaluateExpression(this.expression, x);
   }
 
   /** Called every frame by the scene's update loop. */
@@ -80,16 +94,18 @@ export default class Enemy extends Entity {
   }
 
   /**
-   * Applies a math attack operation to this enemy's numeric value.
+   * Applies a math attack operation to this enemy's expression.
    */
-  applyAttack(operation: AttackOperation): void {
+  applyAttack(operation: AttackOperation): boolean {
     switch (operation.type) {
       case 'add':
-        this.setValue(this.numericValue + operation.value);
-        break;
+        this.setExpression(addToExpression(this.expression, operation.value));
+        return true;
       case 'subtract':
-        this.setValue(this.numericValue - operation.value);
-        break;
+        this.setExpression(addToExpression(this.expression, -operation.value));
+        return true;
+      case 'derivative':
+        return this.applyDerivativeAttack();
     }
   }
 
@@ -117,10 +133,22 @@ export default class Enemy extends Entity {
     );
   }
 
-  private setValue(value: number): void {
-    this.numericValue = value;
+  private setExpression(expression: ParsedExpression): void {
+    this.expression = expression;
+    this.expr = expression.expr;
     this.refreshText();
-    this.destroyIfValueIsZero();
+    this.destroyIfExpressionIsZero();
+  }
+
+  private applyDerivativeAttack(): boolean {
+    const derivative = differentiate(this.expr);
+
+    if (!derivative.valid) {
+      return false;
+    }
+
+    this.setExpression(parseExpression(derivative.expr));
+    return true;
   }
 
   private refreshText(): void {
@@ -133,11 +161,11 @@ export default class Enemy extends Entity {
   }
 
   private getDisplayValue(): string {
-    return this.numericValue.toString();
+    return this.expr;
   }
 
-  private destroyIfValueIsZero(): void {
-    if (this.numericValue === 0) {
+  private destroyIfExpressionIsZero(): void {
+    if (isConstantExpressionValue(this.expression, 0)) {
       this.destroy();
     }
   }

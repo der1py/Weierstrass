@@ -9,7 +9,7 @@ const DEFAULT_MAX_SPAWN_DELAY_MS = 3000;
 const SPAWN_PADDING = 32;
 
 export interface EnemySpawnConfig {
-  value: number;
+  value: number | string;
   speed?: number;
 }
 
@@ -29,6 +29,11 @@ interface ResolvedWaveConfig {
   maxSpawnDelayMs: number;
 }
 
+interface EnemySpawnerCallbacks {
+  onWaveStarted?: (waveIndex: number) => void;
+  onAllWavesCleared?: () => void;
+}
+
 /**
  * Owns ordered enemy wave spawning and active enemy updates.
  */
@@ -37,20 +42,28 @@ export default class EnemySpawner {
   private readonly player: Player;
   private readonly enemyGroup: Phaser.Physics.Arcade.Group;
   private readonly waves: ResolvedWaveConfig[];
+  private readonly callbacks: EnemySpawnerCallbacks;
   private currentWaveIndex = 0;
   private nextEnemyIndex = 0;
   private nextSpawnTimeMs = 0;
+  private hasClearedAllWaves = false;
 
   constructor(
     scene: Phaser.Scene,
     player: Player,
     enemyGroup: Phaser.Physics.Arcade.Group,
     waves: WaveConfig[],
+    callbacks: EnemySpawnerCallbacks = {},
   ) {
     this.scene = scene;
     this.player = player;
     this.enemyGroup = enemyGroup;
     this.waves = waves.map((wave) => this.resolveWaveConfig(wave));
+    this.callbacks = callbacks;
+
+    if (this.waves.length > 0) {
+      this.callbacks.onWaveStarted?.(this.currentWaveIndex);
+    }
   }
 
   update(timeMs: number): void {
@@ -67,6 +80,8 @@ export default class EnemySpawner {
   }
 
   private updateWaveState(timeMs: number): void {
+    if (this.hasClearedAllWaves) return;
+
     const wave = this.getCurrentWave();
 
     if (!wave) return;
@@ -88,6 +103,14 @@ export default class EnemySpawner {
     this.currentWaveIndex += 1;
     this.nextEnemyIndex = 0;
     this.nextSpawnTimeMs = 0;
+
+    if (!this.getCurrentWave()) {
+      this.hasClearedAllWaves = true;
+      this.callbacks.onAllWavesCleared?.();
+      return;
+    }
+
+    this.callbacks.onWaveStarted?.(this.currentWaveIndex);
   }
 
   private spawnNextBatch(wave: ResolvedWaveConfig): void {

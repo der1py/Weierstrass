@@ -3,12 +3,18 @@ import Player from '../entities/Player';
 import { getLevelConfig, type LevelConfig } from '../config/levels';
 import EnemySpawner from '../systems/EnemySpawner';
 import Hotbar, { type HotbarItem } from '../ui/Hotbar';
+import RootShotPrompt from '../ui/RootShotPrompt';
+import { spawnExplosion } from '../effects/spawnExplosion';
+import type { AttackOperation } from '../entities/Attack';
+import type Attack from '../entities/Attack';
+import type { SlideshowSceneData } from './SlideshowScene';
 import backgroundUrl from '../../assets/background.png';
 import karlUrl from '../../assets/karl.png';
-import plusAttackUrl from '../../assets/plus.jpg';
-import minusAttackUrl from '../../assets/minus.jpeg';
 
 const PROJECTILE_SPAWN_PADDING = 4;
+const HUD_X = 16;
+const HUD_Y = 16;
+const HUD_LINE_HEIGHT = 30;
 
 interface GameSceneData {
   levelId?: number;
@@ -25,8 +31,12 @@ export default class GameScene extends Phaser.Scene {
   private enemies!: Phaser.Physics.Arcade.Group;
   private enemySpawner!: EnemySpawner;
   private levelConfig!: LevelConfig;
+  private levelText!: Phaser.GameObjects.Text;
+  private waveText!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
+  private rootShotPrompt!: RootShotPrompt;
   private isGameOver = false;
+  private isLevelComplete = false;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -41,8 +51,6 @@ export default class GameScene extends Phaser.Scene {
     // load sprites
     this.load.image('player', karlUrl);
     this.load.image('attack', karlUrl);
-    this.load.image('plusAttack', plusAttackUrl);
-    this.load.image('minusAttack', minusAttackUrl);
     this.load.image('background', backgroundUrl);
 
     // Only generate the texture once
@@ -59,12 +67,13 @@ export default class GameScene extends Phaser.Scene {
     const { width, height } = this.scale;
 
     this.isGameOver = false;
+    this.isLevelComplete = false;
     this.setupBackground();
 
     // Spawn the player at the center of the world
     this.player = new Player(this, width / 2, height / 2);
     this.player.setDisplaySize(64, 64);
-    this.createHpText();
+    this.createHud();
 
     // Arcade groups stay scene-owned while systems control their behavior.
     this.attacks = this.physics.add.group();
@@ -74,6 +83,10 @@ export default class GameScene extends Phaser.Scene {
       this.player,
       this.enemies,
       this.levelConfig.waves,
+      {
+        onWaveStarted: this.handleWaveStarted,
+        onAllWavesCleared: this.handleAllWavesCleared,
+      },
     );
     this.physics.add.overlap(
       this.attacks,
@@ -90,6 +103,7 @@ export default class GameScene extends Phaser.Scene {
       this,
     );
 
+    this.rootShotPrompt = new RootShotPrompt(this);
     new Hotbar(this, this.player, this.handleUseHotbarItem);
   }
 
@@ -106,16 +120,34 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time: number): void {
-    if (this.isGameOver) return;
+    if (this.isGameOver || this.isLevelComplete) return;
 
     // Delegate per-frame logic to the player
     this.player.update();
     this.enemySpawner.update(time);
   }
 
-  private createHpText(): void {
-    this.hpText = this.add
-      .text(16, 16, this.getHpText(), {
+  private createHud(): void {
+    this.levelText = this.createHudText(HUD_X, HUD_Y, '');
+    this.waveText = this.createHudText(
+      HUD_X,
+      HUD_Y + HUD_LINE_HEIGHT,
+      '',
+    );
+    this.hpText = this.createHudText(
+      HUD_X,
+      HUD_Y + HUD_LINE_HEIGHT * 2,
+      '',
+    );
+
+    this.updateLevelText();
+    this.updateWaveText(0);
+    this.updateHpText();
+  }
+
+  private createHudText(x: number, y: number, text: string): Phaser.GameObjects.Text {
+    return this.add
+      .text(x, y, text, {
         fontFamily: 'Arial, sans-serif',
         fontSize: '24px',
         color: '#ffffff',
@@ -126,24 +158,99 @@ export default class GameScene extends Phaser.Scene {
       .setDepth(100);
   }
 
+  private updateLevelText(): void {
+    this.levelText.setText(this.getLevelText());
+  }
+
+  private updateWaveText(waveIndex: number): void {
+    this.waveText.setText(this.getWaveText(waveIndex));
+  }
+
   private updateHpText(): void {
     this.hpText.setText(this.getHpText());
   }
 
-  private getHpText(): string {
-    return `Level ${this.levelConfig.levelId}\nHP: ${this.player.hp}/${this.player.maxHp}`;
+  private getLevelText(): string {
+    return `Level ${this.levelConfig.levelId}`;
   }
 
-  private handleUseHotbarItem = (item: HotbarItem, pointer: Phaser.Input.Pointer): void => {
-    const aimX = pointer.worldX - this.player.x;
-    const aimY = pointer.worldY - this.player.y;
-    const aimLength = Math.sqrt(aimX * aimX + aimY * aimY);
+  private getWaveText(waveIndex: number): string {
+    return `Wave ${waveIndex + 1}/${this.levelConfig.waves.length}`;
+  }
 
-    const attack = item.createAttack(
-      this,
-      this.player.x,
-      this.player.y,
-    );
+  private getHpText(): string {
+    return `HP: ${this.player.hp}`;
+  }
+
+  private handleWaveStarted = (waveIndex: number): void => {
+    this.updateWaveText(waveIndex);
+  };
+
+  private handleAllWavesCleared = (): void => {
+    this.startLevelCompletionCutscene();
+  };
+
+  private startLevelCompletionCutscene(): void {
+    if (this.isLevelComplete || this.isGameOver) return;
+
+    this.isLevelComplete = true;
+
+    const { nextLevelId } = this.levelConfig;
+    const slideshowData: SlideshowSceneData = {
+      slides: this.levelConfig.completionSlides,
+      nextScene: nextLevelId === null ? 'MenuScene' : 'GameScene',
+      nextSceneData: nextLevelId === null ? undefined : { levelId: nextLevelId },
+    };
+
+    this.scene.start('SlideshowScene', slideshowData);
+  }
+
+  private handleUseHotbarItem = (
+    item: HotbarItem,
+    pointer: Phaser.Input.Pointer,
+  ): boolean | Promise<boolean> => {
+    const targetX = pointer.worldX;
+    const targetY = pointer.worldY;
+
+    if (item.kind === 'root-shot') {
+      return this.handleUseRootShot(item, targetX, targetY);
+    }
+
+    const attack = item.createAttack(this, this.player.x, this.player.y);
+
+    this.fireAttack(attack, targetX, targetY);
+    return true;
+  };
+
+  private async handleUseRootShot(
+    item: HotbarItem,
+    targetX: number,
+    targetY: number,
+  ): Promise<boolean> {
+    if (this.rootShotPrompt.isOpen) return false;
+
+    this.scene.pause();
+
+    let rootValue = 0;
+
+    try {
+      rootValue = await this.rootShotPrompt.prompt();
+    } finally {
+      this.scene.resume('GameScene');
+    }
+
+    if (this.isGameOver || this.isLevelComplete) return false;
+
+    const attack = item.createAttack(this, this.player.x, this.player.y, rootValue);
+
+    this.fireAttack(attack, targetX, targetY);
+    return true;
+  }
+
+  private fireAttack(attack: Attack, targetX: number, targetY: number): void {
+    const aimX = targetX - this.player.x;
+    const aimY = targetY - this.player.y;
+    const aimLength = Math.sqrt(aimX * aimX + aimY * aimY);
 
     if (!attack.active) return;
 
@@ -161,11 +268,11 @@ export default class GameScene extends Phaser.Scene {
 
     this.attacks.add(attack);
 
-    attack.fireTowards(pointer.worldX, pointer.worldY); // fire afterwards so physics works properly
-  };
+    attack.fireTowards(targetX, targetY); // fire afterwards so physics works properly
+  }
 
   private handlePlayerEnemyOverlap(): void {
-    if (this.isGameOver) return;
+    if (this.isGameOver || this.isLevelComplete) return;
 
     const wasDamaged = this.player.takeDamage(1);
 
@@ -197,16 +304,28 @@ export default class GameScene extends Phaser.Scene {
       | Phaser.Physics.Arcade.StaticBody
       | Phaser.Tilemaps.Tile,
   ): void {
-    console.log('Attack hit enemy!');
-    type AttackOperation = { type: 'add' | 'subtract'; value: 1 };
     type AttackProjectile = Phaser.GameObjects.GameObject & {
       active: boolean;
       operation: AttackOperation;
       destroy(fromScene?: boolean): void;
     };
+    type RootShotProjectile = Phaser.GameObjects.GameObject & {
+      active: boolean;
+      rootValue: number;
+      destroy(fromScene?: boolean): void;
+    };
     type AttackableEnemy = Phaser.GameObjects.GameObject & {
       active: boolean;
-      applyAttack(operation: AttackOperation): void;
+      x: number;
+      y: number;
+      applyAttack(operation: AttackOperation): boolean;
+    };
+    type RootEvaluatableEnemy = Phaser.GameObjects.GameObject & {
+      active: boolean;
+      x: number;
+      y: number;
+      evaluate(x: number): number;
+      destroy(fromScene?: boolean): void;
     };
 
     const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -214,8 +333,10 @@ export default class GameScene extends Phaser.Scene {
 
     const isAttackOperation = (value: unknown): value is AttackOperation =>
       isRecord(value) &&
-      (value.type === 'add' || value.type === 'subtract') &&
-      value.value === 1;
+      (
+        ((value.type === 'add' || value.type === 'subtract') && value.value === 1) ||
+        value.type === 'derivative'
+      );
 
     const isAttackProjectile = (value: unknown): value is AttackProjectile =>
       isRecord(value) &&
@@ -223,16 +344,74 @@ export default class GameScene extends Phaser.Scene {
       isAttackOperation(value.operation) &&
       typeof value.destroy === 'function';
 
+    const isRootShotProjectile = (value: unknown): value is RootShotProjectile =>
+      isRecord(value) &&
+      value.active === true &&
+      typeof value.rootValue === 'number' &&
+      Number.isFinite(value.rootValue) &&
+      typeof value.destroy === 'function';
+
     const isAttackableEnemy = (value: unknown): value is AttackableEnemy =>
       isRecord(value) &&
       value.active === true &&
+      typeof value.x === 'number' &&
+      typeof value.y === 'number' &&
       typeof value.applyAttack === 'function';
+
+    const isRootEvaluatableEnemy = (value: unknown): value is RootEvaluatableEnemy =>
+      isRecord(value) &&
+      value.active === true &&
+      typeof value.x === 'number' &&
+      typeof value.y === 'number' &&
+      typeof value.evaluate === 'function' &&
+      typeof value.destroy === 'function';
+
+    if (isRootShotProjectile(attackObj)) {
+      if (isRootEvaluatableEnemy(enemyObj)) {
+        this.handleRootShotEnemyOverlap(attackObj, enemyObj);
+      } else {
+        attackObj.destroy();
+      }
+
+      return;
+    }
 
     if (!isAttackProjectile(attackObj) || !isAttackableEnemy(enemyObj)) {
       return;
     }
 
-    enemyObj.applyAttack(attackObj.operation);
+    const enemyX = enemyObj.x;
+    const enemyY = enemyObj.y;
+    const wasApplied = enemyObj.applyAttack(attackObj.operation);
+
+    if (wasApplied) {
+      spawnExplosion(this, enemyX, enemyY);
+    }
+
+    attackObj.destroy();
+  }
+
+  private handleRootShotEnemyOverlap(
+    attackObj: {
+      rootValue: number;
+      destroy(fromScene?: boolean): void;
+    },
+    enemyObj: {
+      x: number;
+      y: number;
+      evaluate(x: number): number;
+      destroy(fromScene?: boolean): void;
+    },
+  ): void {
+    try {
+      if (enemyObj.evaluate(attackObj.rootValue) === 0) {
+        spawnExplosion(this, enemyObj.x, enemyObj.y);
+        enemyObj.destroy();
+      }
+    } catch {
+      // Invalid enemy functions should not break collision handling.
+    }
+
     attackObj.destroy();
   }
 }
