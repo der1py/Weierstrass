@@ -1,49 +1,47 @@
 import Phaser from 'phaser';
-import { startLevel } from '../flow/startLevel';
 import {
+  addTitleBackground,
   createMenuButton,
   destroyUIButton,
   positionButton,
   type UIButton,
 } from '../ui/menuButton';
 
-/**
- * MenuScene - Title screen with a Start button.
- */
-export default class MenuScene extends Phaser.Scene {
+const BUTTON_MARGIN = 24;
+
+export default class TitleScene extends Phaser.Scene {
   private startButton?: UIButton;
 
   constructor() {
-    super({ key: 'MenuScene' });
+    super({ key: 'TitleScene' });
   }
 
   create(): void {
-    const { width, height } = this.scale;
+    addTitleBackground(this);
     this.scale.on('resize', this.positionStartButton, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown);
 
-    this.add
-      .text(width / 2, height / 3, 'Weierstrass', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '48px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
     this.startButton = createMenuButton(
       this,
-      width / 2,
-      height / 2 + 40,
-      'Start Game',
-      () => startLevel(this, 1),
+      0,
+      0,
+      'START',
+      () => {
+        this.scene.start('MainMenuScene');
+      },
     );
+
+    this.positionStartButton();
   }
 
   private positionStartButton(): void {
     if (this.startButton === undefined) return;
 
-    const { width, height } = this.scale;
-    positionButton(this.startButton, width / 2, height / 2 + 40);
+    const { height } = this.scale;
+    const x = BUTTON_MARGIN + this.startButton.width / 2;
+    const y = height - BUTTON_MARGIN - this.startButton.height / 2;
+
+    positionButton(this.startButton, x, y);
   }
 
   private handleShutdown = (): void => {

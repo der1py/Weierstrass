@@ -7,6 +7,9 @@ import l2_1Url from '../../assets/l2_1.png';
 import l2_2Url from '../../assets/l2_2.png';
 import l2_3Url from '../../assets/l2_3.png';
 import l2_4Url from '../../assets/l2_4.png';
+import l3_1Url from '../../assets/l3_1.png';
+import titleScreenUrl from '../../assets/title_screen.png';
+import winUrl from '../../assets/win.png';
 
 /**
  * PreloadScene loads shared assets before the menu is shown.
@@ -26,10 +29,12 @@ export default class PreloadScene extends Phaser.Scene {
     this.load.image('l2_2', l2_2Url);
     this.load.image('l2_3', l2_3Url);
     this.load.image('l2_4', l2_4Url);
-    
+    this.load.image('l3_1', l3_1Url);
+    this.load.image('title_screen', titleScreenUrl);
+    this.load.image('win', winUrl);
   }
 
   create(): void {
-    this.scene.start('MenuScene');
+    this.scene.start('TitleScene');
   }
 }

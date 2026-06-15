@@ -14,6 +14,13 @@ import {
 const ENEMY_TEXTURE_KEY = 'enemy-collision-placeholder';
 const ENEMY_BODY_SIZE = 32;
 const ENEMY_SPEED = 100;
+const POINTER_OVER_EVENT = 'pointerover';
+const POINTER_OUT_EVENT = 'pointerout';
+
+interface EnemyHoverCallbacks {
+  onHoverStart?: (value: string) => void;
+  onHoverEnd?: () => void;
+}
 
 function ensureEnemyTexture(scene: Phaser.Scene): string {
   if (!scene.textures.exists(ENEMY_TEXTURE_KEY)) {
@@ -37,8 +44,10 @@ export default class Enemy extends Entity {
 
   private readonly player: Player;
   private readonly speed: number;
+  private readonly hoverCallbacks: EnemyHoverCallbacks;
   private readonly valueText: Phaser.GameObjects.Text;
   private expression: ParsedExpression;
+  private isPointerOver = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -47,23 +56,27 @@ export default class Enemy extends Entity {
     value: number | string,
     player: Player,
     speed: number = ENEMY_SPEED,
+    hoverCallbacks: EnemyHoverCallbacks = {},
   ) {
     super(scene, x, y, ensureEnemyTexture(scene));
 
     this.player = player;
     this.speed = speed;
+    this.hoverCallbacks = hoverCallbacks;
     this.expression = parseExpression(value);
     this.expr = this.expression.expr;
 
     this.setOrigin(0.5);
     this.setDisplaySize(ENEMY_BODY_SIZE, ENEMY_BODY_SIZE);
-    this.setVisible(false);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
 
     body.setAllowGravity(false);
     body.setEnable(true);
     body.setSize(ENEMY_BODY_SIZE, ENEMY_BODY_SIZE, true);
+    this.setInteractive({ useHandCursor: true });
+    this.on(POINTER_OVER_EVENT, this.handlePointerOver, this);
+    this.on(POINTER_OUT_EVENT, this.handlePointerOut, this);
 
     this.valueText = scene.add.text(this.x, this.y, this.getDisplayValue(), {
       color: '#000000',
@@ -110,6 +123,13 @@ export default class Enemy extends Entity {
   }
 
   destroy(fromScene?: boolean): void {
+    if (this.isPointerOver) {
+      this.handlePointerOut();
+    }
+
+    this.off(POINTER_OVER_EVENT, this.handlePointerOver, this);
+    this.off(POINTER_OUT_EVENT, this.handlePointerOut, this);
+
     if (this.valueText.active) {
       this.valueText.destroy(fromScene);
     }
@@ -154,10 +174,24 @@ export default class Enemy extends Entity {
   private refreshText(): void {
     this.valueText.setText(this.getDisplayValue());
     this.syncTextPosition();
+
+    if (this.isPointerOver) {
+      this.hoverCallbacks.onHoverStart?.(this.getDisplayValue());
+    }
   }
 
   private syncTextPosition(): void {
     this.valueText.setPosition(this.x, this.y);
+  }
+
+  private handlePointerOver(): void {
+    this.isPointerOver = true;
+    this.hoverCallbacks.onHoverStart?.(this.getDisplayValue());
+  }
+
+  private handlePointerOut(): void {
+    this.isPointerOver = false;
+    this.hoverCallbacks.onHoverEnd?.();
   }
 
   private getDisplayValue(): string {

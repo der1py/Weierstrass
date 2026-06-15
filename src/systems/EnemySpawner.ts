@@ -32,6 +32,8 @@ interface ResolvedWaveConfig {
 interface EnemySpawnerCallbacks {
   onWaveStarted?: (waveIndex: number) => void;
   onAllWavesCleared?: () => void;
+  onEnemyHoverStart?: (value: string) => void;
+  onEnemyHoverEnd?: () => void;
 }
 
 /**
@@ -135,6 +137,10 @@ export default class EnemySpawner {
       config.value,
       this.player,
       config.speed,
+      {
+        onHoverStart: this.callbacks.onEnemyHoverStart,
+        onHoverEnd: this.callbacks.onEnemyHoverEnd,
+      },
     );
 
     this.enemyGroup.add(enemy);

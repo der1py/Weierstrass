@@ -726,11 +726,17 @@ function formatUnary(node: ExpressionNode & { kind: 'unary' }, parentPrecedence:
   return getPrecedence(node) < parentPrecedence ? `(${text})` : text;
 }
 
+function isMultiplicationNode(
+  node: ExpressionNode & { kind: 'binary' },
+): node is ExpressionNode & { kind: 'binary'; operator: 'multiply' } {
+  return node.operator === 'multiply';
+}
+
 function formatBinary(
   node: ExpressionNode & { kind: 'binary' },
   parentPrecedence: number,
 ): string {
-  if (node.operator === 'multiply') {
+  if (isMultiplicationNode(node)) {
     return formatMultiplication(node, parentPrecedence);
   }
 

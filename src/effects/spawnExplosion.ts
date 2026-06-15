@@ -9,6 +9,7 @@ const SHARD_START_RADIUS = 8;
 const SHARD_END_RADIUS = 34;
 const SHARD_LENGTH = 10;
 const SHARD_JITTER = 0.22;
+const FULL_CIRCLE_RADIANS = Math.PI * 2;
 const EXPLOSION_COLORS = [
   '#FFFFFF',
   '#FFF7C7',
@@ -80,7 +81,7 @@ export function spawnExplosion(scene: Phaser.Scene, x: number, y: number): void 
 
 function createShards(): ExplosionShard[] {
   const count = Phaser.Math.Between(SHARD_COUNT_MIN, SHARD_COUNT_MAX);
-  const angleStep = Phaser.Math.PI2 / count;
+  const angleStep = FULL_CIRCLE_RADIANS / count;
   const shards: ExplosionShard[] = [];
 
   for (let i = 0; i < count; i += 1) {
@@ -96,7 +97,8 @@ function createShards(): ExplosionShard[] {
 }
 
 function getRandomExplosionColor(): number {
-  return Phaser.Display.Color.HexStringToColor(
-    Phaser.Utils.Array.GetRandom(EXPLOSION_COLORS),
-  ).color;
+  const colorIndex = Phaser.Math.Between(0, EXPLOSION_COLORS.length - 1);
+  const color = EXPLOSION_COLORS[colorIndex] ?? EXPLOSION_COLORS[0];
+
+  return Phaser.Display.Color.HexStringToColor(color).color;
 }

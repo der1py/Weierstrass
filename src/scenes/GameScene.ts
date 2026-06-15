@@ -7,6 +7,7 @@ import RootShotPrompt from '../ui/RootShotPrompt';
 import { spawnExplosion } from '../effects/spawnExplosion';
 import type { AttackOperation } from '../entities/Attack';
 import type Attack from '../entities/Attack';
+import { startLevel } from '../flow/startLevel';
 import type { SlideshowSceneData } from './SlideshowScene';
 import backgroundUrl from '../../assets/background.png';
 import karlUrl from '../../assets/karl.png';
@@ -15,8 +16,11 @@ const PROJECTILE_SPAWN_PADDING = 4;
 const HUD_X = 16;
 const HUD_Y = 16;
 const HUD_LINE_HEIGHT = 30;
+const ENEMY_HOVER_MARGIN = 16;
+const WIN_SLIDES = ['win'];
 
 interface GameSceneData {
+  level?: number;
   levelId?: number;
 }
 
@@ -34,7 +38,9 @@ export default class GameScene extends Phaser.Scene {
   private levelText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
+  private enemyHoverText!: Phaser.GameObjects.Text;
   private rootShotPrompt!: RootShotPrompt;
+  private hotbar!: Hotbar;
   private isGameOver = false;
   private isLevelComplete = false;
 
@@ -43,7 +49,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   init(data: GameSceneData = {}): void {
-    this.levelConfig = getLevelConfig(data.levelId ?? 1);
+    this.levelConfig = getLevelConfig(data.level ?? data.levelId ?? 1);
   }
 
   /** Generate a simple colored-rectangle texture for the player. */
@@ -86,6 +92,8 @@ export default class GameScene extends Phaser.Scene {
       {
         onWaveStarted: this.handleWaveStarted,
         onAllWavesCleared: this.handleAllWavesCleared,
+        onEnemyHoverStart: this.showEnemyHoverText,
+        onEnemyHoverEnd: this.hideEnemyHoverText,
       },
     );
     this.physics.add.overlap(
@@ -104,7 +112,9 @@ export default class GameScene extends Phaser.Scene {
     );
 
     this.rootShotPrompt = new RootShotPrompt(this);
-    new Hotbar(this, this.player, this.handleUseHotbarItem);
+    this.hotbar = new Hotbar(this, this.player, this.handleUseHotbarItem, {
+      levelId: this.levelConfig.levelId,
+    });
   }
 
   setupBackground(): void {
@@ -139,6 +149,12 @@ export default class GameScene extends Phaser.Scene {
       HUD_Y + HUD_LINE_HEIGHT * 2,
       '',
     );
+    this.enemyHoverText = this.createHudText(0, 0, '');
+    this.enemyHoverText.setOrigin(1, 1);
+    this.enemyHoverText.setVisible(false);
+    this.positionEnemyHoverText();
+    this.scale.on('resize', this.positionEnemyHoverText, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.unbindHudEvents, this);
 
     this.updateLevelText();
     this.updateWaveText(0);
@@ -170,6 +186,29 @@ export default class GameScene extends Phaser.Scene {
     this.hpText.setText(this.getHpText());
   }
 
+  private showEnemyHoverText = (value: string): void => {
+    this.enemyHoverText.setText(value);
+    this.enemyHoverText.setVisible(true);
+    this.positionEnemyHoverText();
+  };
+
+  private hideEnemyHoverText = (): void => {
+    this.enemyHoverText.setVisible(false);
+  };
+
+  private positionEnemyHoverText = (): void => {
+    const { width, height } = this.scale;
+
+    this.enemyHoverText.setPosition(
+      width - ENEMY_HOVER_MARGIN,
+      height - ENEMY_HOVER_MARGIN,
+    );
+  };
+
+  private unbindHudEvents = (): void => {
+    this.scale.off('resize', this.positionEnemyHoverText, this);
+  };
+
   private getLevelText(): string {
     return `Level ${this.levelConfig.levelId}`;
   }
@@ -183,26 +222,36 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private handleWaveStarted = (waveIndex: number): void => {
+    if (waveIndex > 0) {
+      this.hotbar.resetCooldowns();
+    }
+
     this.updateWaveText(waveIndex);
   };
 
   private handleAllWavesCleared = (): void => {
-    this.startLevelCompletionCutscene();
+    this.hotbar.resetCooldowns();
+    this.advanceAfterLevelComplete();
   };
 
-  private startLevelCompletionCutscene(): void {
+  private advanceAfterLevelComplete(): void {
     if (this.isLevelComplete || this.isGameOver) return;
 
     this.isLevelComplete = true;
 
     const { nextLevelId } = this.levelConfig;
-    const slideshowData: SlideshowSceneData = {
-      slides: this.levelConfig.completionSlides,
-      nextScene: nextLevelId === null ? 'MenuScene' : 'GameScene',
-      nextSceneData: nextLevelId === null ? undefined : { levelId: nextLevelId },
-    };
 
-    this.scene.start('SlideshowScene', slideshowData);
+    if (nextLevelId === null) {
+      const slideshowData: SlideshowSceneData = {
+        slides: WIN_SLIDES,
+        nextScene: 'MainMenuScene',
+      };
+
+      this.scene.start('SlideshowScene', slideshowData);
+      return;
+    }
+
+    startLevel(this, nextLevelId);
   }
 
   private handleUseHotbarItem = (

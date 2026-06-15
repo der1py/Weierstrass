@@ -1,4 +1,12 @@
 import Phaser from 'phaser';
+import {
+  createTextureButton,
+  destroyUIButton,
+  NEXT_BUTTON_HOVER_TEXTURE_KEY,
+  NEXT_BUTTON_TEXTURE_KEY,
+  positionButton,
+  type UIButton,
+} from '../ui/menuButton';
 
 export type SlideshowSceneData = {
   slides: string[];
@@ -6,15 +14,11 @@ export type SlideshowSceneData = {
   nextSceneData?: object;
 };
 
-const NEXT_BUTTON_WIDTH = 135;
-const NEXT_BUTTON_HEIGHT = 50;
 const NEXT_BUTTON_PADDING = 28;
-const NEXT_BUTTON_RADIUS = 10;
 const NEXT_BUTTON_DEPTH = 1000;
-const NEXT_BUTTON_TEXTURE_WIDTH = NEXT_BUTTON_WIDTH + 8;
-const NEXT_BUTTON_TEXTURE_HEIGHT = NEXT_BUTTON_HEIGHT + 9;
-const NEXT_BUTTON_TEXTURE_KEY = 'next-button-parchment';
-const NEXT_BUTTON_HOVER_TEXTURE_KEY = 'next-button-parchment-hover';
+const SLIDE_FADE_OUT_DURATION = 350;
+const SLIDE_FADE_IN_DURATION = 500;
+const SLIDE_ZOOM_SCALE = 1.08;
 
 /**
  * SlideshowScene displays full-screen images and advances from a dedicated UI button.
@@ -25,8 +29,9 @@ export default class SlideshowScene extends Phaser.Scene {
   private nextScene = '';
   private nextSceneData?: object;
   private currentImage?: Phaser.GameObjects.Image;
-  private nextButton?: Phaser.GameObjects.Image;
-  private nextButtonLabel?: Phaser.GameObjects.Text;
+  private nextUIButton?: UIButton;
+  private slideTransitionTween?: Phaser.Tweens.Tween;
+  private isTransitioning = false;
 
   constructor() {
     super({ key: 'SlideshowScene' });
@@ -38,12 +43,13 @@ export default class SlideshowScene extends Phaser.Scene {
     this.nextSceneData = data.nextSceneData;
     this.currentSlideIndex = 0;
     this.currentImage = undefined;
-    this.nextButton = undefined;
-    this.nextButtonLabel = undefined;
+    this.nextUIButton = undefined;
+    this.slideTransitionTween = undefined;
+    this.isTransitioning = false;
   }
 
   create(): void {
-    this.scale.on('resize', this.positionNextButton, this);
+    this.scale.on('resize', this.handleResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown);
 
     if (this.slides.length === 0) {
@@ -52,137 +58,146 @@ export default class SlideshowScene extends Phaser.Scene {
       return;
     }
 
-    this.showCurrentSlide();
     this.createNextButton();
+    this.transitionToSlide(this.currentSlideIndex);
   }
 
-  private showCurrentSlide(): void {
-    if (this.currentSlideIndex >= this.slides.length) {
+  private transitionToSlide(slideIndex: number): void {
+    if (this.isTransitioning) return;
+
+    if (slideIndex >= this.slides.length) {
       this.startNextScene();
       return;
     }
 
-    this.currentImage?.destroy();
+    if (slideIndex < 0) return;
 
+    this.isTransitioning = true;
+    this.setNextButtonInputEnabled(false);
+    this.slideTransitionTween?.stop();
+
+    if (this.currentImage === undefined) {
+      this.createSlideImage(slideIndex);
+      this.playSlideTransitionIn(slideIndex);
+      return;
+    }
+
+    const zoomScale = this.getSlideCoverScale(this.currentImage) * SLIDE_ZOOM_SCALE;
+
+    this.slideTransitionTween = this.tweens.add({
+      targets: this.currentImage,
+      alpha: 0,
+      scaleX: zoomScale,
+      scaleY: zoomScale,
+      duration: SLIDE_FADE_OUT_DURATION,
+      ease: 'Sine.easeInOut',
+      onComplete: () => {
+        this.setCurrentImageTexture(slideIndex);
+        this.playSlideTransitionIn(slideIndex);
+      },
+    });
+  }
+
+  private createSlideImage(slideIndex: number): void {
     const { width, height } = this.scale;
-    const slideKey = this.slides[this.currentSlideIndex];
+    const slideKey = this.slides[slideIndex];
     const image = this.add.image(width / 2, height / 2, slideKey);
-    const scale = Math.max(width / image.width, height / image.height);
 
     image.setOrigin(0.5);
-    image.setScale(scale);
+    image.setAlpha(0);
+    this.applySlideLayout(image, SLIDE_ZOOM_SCALE);
 
     this.currentImage = image;
   }
 
-  private createNextButton(): void {
-    this.createNextButtonTexture(NEXT_BUTTON_TEXTURE_KEY, 0xf0d9a4);
-    this.createNextButtonTexture(NEXT_BUTTON_HOVER_TEXTURE_KEY, 0xffe7ae);
+  private setCurrentImageTexture(slideIndex: number): void {
+    if (this.currentImage === undefined) return;
 
-    const button = this.add.image(0, 0, NEXT_BUTTON_TEXTURE_KEY);
-    const label = this.add.text(0, 0, 'Next', {
-      color: '#3f2a12',
-      fontFamily: 'Georgia, Times New Roman, serif',
-      fontSize: '24px',
-      fontStyle: '700',
-    });
+    this.currentImage.setTexture(this.slides[slideIndex]);
+    this.currentImage.setAlpha(0);
+    this.applySlideLayout(this.currentImage, SLIDE_ZOOM_SCALE);
+  }
 
-    button.setOrigin(0.5);
-    button.setDepth(NEXT_BUTTON_DEPTH);
-    button.setScrollFactor(0);
-    button.setAlpha(0);
+  private playSlideTransitionIn(slideIndex: number): void {
+    if (this.currentImage === undefined) {
+      this.isTransitioning = false;
+      return;
+    }
 
-    label.setOrigin(0.5);
-    label.setDepth(NEXT_BUTTON_DEPTH + 1);
-    label.setScrollFactor(0);
-    label.setAlpha(0);
+    const coverScale = this.getSlideCoverScale(this.currentImage);
 
-    this.nextButton = button;
-    this.nextButtonLabel = label;
-
-    this.positionNextButton();
-
-    button.on('pointerover', this.handleNextButtonOver);
-    button.on('pointerout', this.handleNextButtonOut);
-    button.on('pointerdown', this.handleNextButtonDown);
-
-    this.tweens.add({
-      targets: [button, label],
+    this.slideTransitionTween = this.tweens.add({
+      targets: this.currentImage,
       alpha: 1,
-      duration: 1000,
+      scaleX: coverScale,
+      scaleY: coverScale,
+      duration: SLIDE_FADE_IN_DURATION,
       ease: 'Sine.easeOut',
-      onComplete: () => this.enableNextButton(),
+      onComplete: () => {
+        this.currentSlideIndex = slideIndex;
+        this.isTransitioning = false;
+        this.slideTransitionTween = undefined;
+        this.setNextButtonInputEnabled(true);
+      },
     });
   }
 
-  private createNextButtonTexture(textureKey: string, fillColor: number): void {
-    if (this.textures.exists(textureKey)) return;
+  private applySlideLayout(image: Phaser.GameObjects.Image, zoomMultiplier = 1): void {
+    const { width, height } = this.scale;
 
-    const graphics = this.add.graphics();
-    const buttonX = 0;
-    const buttonY = 0;
+    image.setPosition(width / 2, height / 2);
+    image.setScale(this.getSlideCoverScale(image) * zoomMultiplier);
+  }
 
-    graphics.fillStyle(0x1f1308, 0.38);
-    graphics.fillRoundedRect(
-      buttonX + 4,
-      buttonY + 5,
-      NEXT_BUTTON_WIDTH,
-      NEXT_BUTTON_HEIGHT,
-      NEXT_BUTTON_RADIUS,
-    );
+  private getSlideCoverScale(image: Phaser.GameObjects.Image): number {
+    const { width, height } = this.scale;
 
-    graphics.fillStyle(fillColor, 0.96);
-    graphics.fillRoundedRect(
-      buttonX,
-      buttonY,
-      NEXT_BUTTON_WIDTH,
-      NEXT_BUTTON_HEIGHT,
-      NEXT_BUTTON_RADIUS,
-    );
-    graphics.lineStyle(3, 0x8f6330, 1);
-    graphics.strokeRoundedRect(
-      buttonX,
-      buttonY,
-      NEXT_BUTTON_WIDTH,
-      NEXT_BUTTON_HEIGHT,
-      NEXT_BUTTON_RADIUS,
-    );
-    graphics.lineStyle(1, 0xfff1c7, 0.45);
-    graphics.lineBetween(
-      buttonX + 16,
-      buttonY + 14,
-      buttonX + NEXT_BUTTON_WIDTH - 18,
-      buttonY + 11,
-    );
-    graphics.lineStyle(1, 0xb88442, 0.25);
-    graphics.lineBetween(
-      buttonX + 18,
-      buttonY + NEXT_BUTTON_HEIGHT - 13,
-      buttonX + NEXT_BUTTON_WIDTH - 14,
-      buttonY + NEXT_BUTTON_HEIGHT - 16,
+    return Math.max(width / image.width, height / image.height);
+  }
+
+  private createNextButton(): void {
+    const nextButton = createTextureButton(
+      this,
+      0,
+      0,
+      NEXT_BUTTON_TEXTURE_KEY,
+      NEXT_BUTTON_HOVER_TEXTURE_KEY,
+      'Next',
+      this.handleNextButtonDown,
+      NEXT_BUTTON_DEPTH,
     );
 
-    graphics.generateTexture(textureKey, NEXT_BUTTON_TEXTURE_WIDTH, NEXT_BUTTON_TEXTURE_HEIGHT);
-    graphics.destroy();
+    this.nextUIButton = nextButton;
+    this.handleResize();
+  }
+
+  private handleResize(): void {
+    this.positionNextButton();
+
+    if (this.currentImage !== undefined) {
+      this.applySlideLayout(this.currentImage);
+    }
   }
 
   private positionNextButton(): void {
-    if (this.nextButton === undefined) return;
+    if (this.nextUIButton === undefined) return;
 
     const { width, height } = this.scale;
-    const backgroundX = width - NEXT_BUTTON_PADDING - NEXT_BUTTON_WIDTH / 2;
-    const backgroundY = height - NEXT_BUTTON_PADDING - NEXT_BUTTON_HEIGHT / 2;
-    const textureOffsetX = (NEXT_BUTTON_TEXTURE_WIDTH - NEXT_BUTTON_WIDTH) / 2;
-    const textureOffsetY = (NEXT_BUTTON_TEXTURE_HEIGHT - NEXT_BUTTON_HEIGHT) / 2;
+    const x = width - NEXT_BUTTON_PADDING - this.nextUIButton.width / 2;
+    const y = height - NEXT_BUTTON_PADDING - this.nextUIButton.height / 2;
 
-    this.nextButton.setPosition(backgroundX + textureOffsetX, backgroundY + textureOffsetY);
-    this.nextButtonLabel?.setPosition(backgroundX, backgroundY);
+    positionButton(this.nextUIButton, x, y);
   }
 
-  private enableNextButton(): void {
-    if (this.nextButton === undefined) return;
+  private setNextButtonInputEnabled(isEnabled: boolean): void {
+    if (this.nextUIButton === undefined) return;
 
-    this.nextButton.setInteractive();
+    if (isEnabled) {
+      this.nextUIButton.hitArea.setInteractive({ useHandCursor: true });
+      return;
+    }
+
+    this.nextUIButton.hitArea.disableInteractive();
   }
 
   private isValidSlideList(slides: unknown): slides is string[] {
@@ -193,38 +208,15 @@ export default class SlideshowScene extends Phaser.Scene {
     );
   }
 
-  private handleNextButtonOver = (): void => {
-    this.nextButton?.setScale(1.05);
-    this.nextButtonLabel?.setScale(1.05);
-    this.nextButton?.setTexture(NEXT_BUTTON_HOVER_TEXTURE_KEY);
-  };
-
-  private handleNextButtonOut = (): void => {
-    this.nextButton?.setScale(1);
-    this.nextButtonLabel?.setScale(1);
-    this.nextButton?.setTexture(NEXT_BUTTON_TEXTURE_KEY);
-  };
-
   private handleNextButtonDown = (): void => {
-    if (this.nextButton !== undefined && this.nextButtonLabel !== undefined) {
-      this.tweens.add({
-        targets: [this.nextButton, this.nextButtonLabel],
-        scaleX: 0.96,
-        scaleY: 0.96,
-        duration: 70,
-        yoyo: true,
-        ease: 'Sine.easeInOut',
-      });
-    }
+    if (this.isTransitioning) return;
 
     if (this.currentSlideIndex === this.slides.length - 1) {
       this.startNextScene();
       return;
     }
 
-    this.currentSlideIndex += 1;
-
-    this.showCurrentSlide();
+    this.transitionToSlide(this.currentSlideIndex + 1);
   };
 
   private startNextScene(): void {
@@ -232,20 +224,17 @@ export default class SlideshowScene extends Phaser.Scene {
   }
 
   private handleShutdown = (): void => {
-    this.scale.off('resize', this.positionNextButton, this);
-
-    if (this.nextButton !== undefined) {
-      this.tweens.killTweensOf(this.nextButton);
-      this.nextButton.destroy();
+    this.scale.off('resize', this.handleResize, this);
+    destroyUIButton(this, this.nextUIButton);
+    this.slideTransitionTween?.stop();
+    if (this.currentImage !== undefined) {
+      this.tweens.killTweensOf(this.currentImage);
     }
-
-    if (this.nextButtonLabel !== undefined) {
-      this.tweens.killTweensOf(this.nextButtonLabel);
-      this.nextButtonLabel.destroy();
-    }
+    this.currentImage?.destroy();
 
     this.currentImage = undefined;
-    this.nextButton = undefined;
-    this.nextButtonLabel = undefined;
+    this.nextUIButton = undefined;
+    this.slideTransitionTween = undefined;
+    this.isTransitioning = false;
   };
 }

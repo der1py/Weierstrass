@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import './style.css';
 import PreloadScene from './scenes/PreloadScene';
-import MenuScene from './scenes/MenuScene';
+import TitleScene from './scenes/TitleScene';
+import MainMenuScene from './scenes/MainMenuScene';
 import SlideshowScene from './scenes/SlideshowScene';
 import GameScene from './scenes/GameScene';
 import GameOverScene from './scenes/GameOverScene';
@@ -23,7 +24,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [PreloadScene, MenuScene, SlideshowScene, GameScene, GameOverScene],
+  scene: [PreloadScene, TitleScene, MainMenuScene, SlideshowScene, GameScene, GameOverScene],
 };
 
 // Boot the game

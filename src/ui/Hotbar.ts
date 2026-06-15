@@ -39,6 +39,10 @@ type HotbarUseItemCallback = (
   pointer: Phaser.Input.Pointer,
 ) => boolean | Promise<boolean> | void;
 
+interface HotbarConfig {
+  levelId: number;
+}
+
 export default class Hotbar {
   private readonly scene: Phaser.Scene;
   private readonly onUseItem: HotbarUseItemCallback;
@@ -47,10 +51,15 @@ export default class Hotbar {
   private readonly slotViews: SlotView[] = [];
   private selectedIndex = 0;
 
-  constructor(scene: Phaser.Scene, _player: Player, onUseItem: HotbarUseItemCallback) {
+  constructor(
+    scene: Phaser.Scene,
+    _player: Player,
+    onUseItem: HotbarUseItemCallback,
+    config: HotbarConfig,
+  ) {
     this.scene = scene;
     this.onUseItem = onUseItem;
-    this.slots = this.createDefaultLoadout();
+    this.slots = this.createDefaultLoadout(config.levelId);
     this.container = scene.add.container(0, 0);
 
     this.container.setDepth(1000);
@@ -66,17 +75,22 @@ export default class Hotbar {
     this.scene.events.once(Phaser.Scenes.Events.DESTROY, this.destroy, this);
   }
 
-  private createDefaultLoadout(): Array<HotbarItem | null> {
-    return [
-      this.createAttackItem('attack-add-1', '+', { type: 'add', value: 1 }),
-      this.createAttackItem('attack-subtract-1', '-', { type: 'subtract', value: 1 }),
-      this.createRootShotItem(),
-      this.createAttackItem(
+  private createDefaultLoadout(levelId: number): Array<HotbarItem | null> {
+    const rootShotItem = levelId >= 2 ? this.createRootShotItem() : null;
+    const derivativeItem = levelId >= 2
+      ? this.createAttackItem(
         'attack-derivative',
         'dy/dx',
         { type: 'derivative' },
         DERIVATIVE_ATTACK_COOLDOWN_MS,
-      ),
+      )
+      : null;
+
+    return [
+      this.createAttackItem('attack-add-1', '+', { type: 'add', value: 1 }),
+      this.createAttackItem('attack-subtract-1', '-', { type: 'subtract', value: 1 }),
+      rootShotItem,
+      derivativeItem,
       null,
       null,
       null,
@@ -123,7 +137,7 @@ export default class Hotbar {
       const x = index * (SLOT_SIZE + SLOT_GAP);
       const background = this.scene.add.graphics();
       const cooldownOverlay = this.scene.add.graphics();
-      const cooldownMask = this.scene.make.graphics({ add: false });
+      const cooldownMask = this.scene.add.graphics();
       const icon = this.scene.add.text(x + SLOT_SIZE / 2, 0, '', {
         color: '#f8f4e8',
         fontFamily: 'Arial, sans-serif',
@@ -132,6 +146,7 @@ export default class Hotbar {
       });
 
       icon.setOrigin(0.5);
+      cooldownMask.setAlpha(0);
       cooldownOverlay.setMask(cooldownMask.createGeometryMask());
 
       this.container.add([background, icon, cooldownOverlay]);
@@ -302,6 +317,16 @@ export default class Hotbar {
     if (item.cooldownDuration === undefined) return;
 
     item.lastUsedTime = performance.now();
+    this.updateCooldownOverlays();
+  }
+
+  resetCooldowns(): void {
+    for (const item of this.slots) {
+      if (item === null || item.cooldownDuration === undefined) continue;
+
+      item.lastUsedTime = undefined;
+    }
+
     this.updateCooldownOverlays();
   }
 
